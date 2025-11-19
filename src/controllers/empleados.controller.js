@@ -14,23 +14,23 @@ export const buscarEmpleado = async (req, res) => {
 
   try {
     const queryText = `
-      SELECT 
-        id_usuario,
-        nombreusuario,
-        nombres,
-        apellidopat,
-        apellidomat,
-        tipoempleado,
-        contrasenaue
-      FROM usuario_empleado
-      WHERE nombreusuario = $1 AND contrasenaue = $2
-    `;
+    SELECT 
+      id_usuario,
+      nombreusuario,
+      nombres,
+      apellidopat,
+      apellidomat,
+      tipoempleado,
+      contrasenaue
+    FROM usuario_empleado
+    WHERE LOWER(nombreusuario) = LOWER($1) AND contrasenaue = $2
+  `;
 
     const result = await pool.query(queryText, [nombre, contrasena]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        message: "Usuario o contraseña incorrectos.",
+        message: "Usuario no encontrado.",
       });
     }
 
@@ -73,11 +73,8 @@ export const getPacientes = async (req, res) => {
 
 // buscar POR NOMBRES Y APELLIDOS
 export const getPacienteByNombres = async (req, res) => {
-    // 1. Cargar las variables desde req.query (Parámetros de consulta)
-    // Los parámetros de consulta son más apropiados para búsquedas.
     const { nombre, apellidoPat, apellidoMat } = req.query; 
 
-    // Opcional: Validar que al menos un campo esté presente para buscar
     if (!nombre && !apellidoPat && !apellidoMat) {
         return res.status(400).json({ 
             message: "Debe proporcionar al menos un campo (nombre, apellidoPat o apellidoMat) para buscar." 
@@ -85,47 +82,43 @@ export const getPacienteByNombres = async (req, res) => {
     }
 
     try {
-        // 2. Construir la consulta SQL dinámicamente
-        // Se define la consulta base y los filtros
         let query = `
-            SELECT id_paciente, nombre_paciente, apellido_pat, apellido_mat, direccion 
+            SELECT id_paciente, nombrespaciente, apellidopat, apellidomat, telefono, email
             FROM paciente
-            WHERE 1 = 1 -- Inicio de la cláusula WHERE
+            WHERE 1 = 1
         `;
-        const values = []; // Array para los valores seguros ($1, $2, ...)
+        const values = [];
         let paramIndex = 1;
 
-        // 3. Añadir filtros si existen
         if (nombre) {
-            // Usamos ILIKE para búsqueda insensible a mayúsculas/minúsculas y el operador % para coincidencias parciales
-            query += ` AND nombre_paciente ILIKE $${paramIndex}`;
+            query += ` AND nombrespaciente ILIKE $${paramIndex}`;
             values.push(`%${nombre}%`);
             paramIndex++;
         }
         if (apellidoPat) {
-            query += ` AND apellido_pat ILIKE $${paramIndex}`;
+            query += ` AND apellidopat ILIKE $${paramIndex}`;
             values.push(`%${apellidoPat}%`);
             paramIndex++;
         }
         if (apellidoMat) {
-            query += ` AND apellido_mat ILIKE $${paramIndex}`;
+            query += ` AND apellidomat ILIKE $${paramIndex}`;
             values.push(`%${apellidoMat}%`);
             paramIndex++;
         }
-        
-        // 4. Ejecutar la consulta
+
         const result = await pool.query(query, values);
 
         if (result.rows.length === 0)
             return res.status(404).json({ message: "Paciente no encontrado con esos criterios" });
 
-        res.json(result.rows); // Devuelve todos los resultados que coincidan
+        res.json(result.rows);
 
     } catch (error) {
         console.error("Error al buscar paciente:", error);
         res.status(500).json({ error: "Error interno del servidor al buscar paciente." });
     }
 };
+
 
 //historial del paciente buscado
 export const getHistorial = async (req, res) => {
@@ -188,4 +181,3 @@ export const getTratamientos = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-//
