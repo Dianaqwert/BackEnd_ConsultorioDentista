@@ -21,7 +21,8 @@ export const buscarEmpleado = async (req, res) => {
       apellidopat,
       apellidomat,
       tipoempleado,
-      contrasenaue
+      contrasenaue,
+      superadmin
     FROM usuario_empleado
     WHERE LOWER(nombreusuario) = LOWER($1) AND contrasenaue = $2
   `;
@@ -117,3 +118,15 @@ export const getTratamientos = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+//-------------------DENTISTA APARTADO DE ADMINISTRACION-----------------------------------
+export const getListarEmpleados = async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM Usuario_Empleado where superadmin='false'");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
