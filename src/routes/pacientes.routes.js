@@ -29,8 +29,7 @@ router.get("/citas/filtro", getCitasPorFecha);
 //edita una cita
 router.get("/cita/:id_cita/detalles", getDetalleCitaEspecifica);
 router.get("/paciente/:id_paciente/ultimo-historial", getUltimoHistorialPaciente);
-//________________________________APARTADO DE ADMINISTRACION PARA EL SUPERADMIN_________________________________
-
+//_________________________________________APARTADO DE RECEPCIONISTA___________________________________________________________________________________
 
 export default router;
 

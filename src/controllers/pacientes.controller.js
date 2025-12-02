@@ -503,3 +503,5 @@ export const getUltimoHistorialPaciente = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+//_______________________________________APARTADO DEL RECEPCIONISTA_____________________________________________________________
