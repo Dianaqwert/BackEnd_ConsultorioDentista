@@ -3,7 +3,7 @@ import { getPacientes, getPacienteByNombres,getReporteCompletoByPacienteId,
     getDerivaciones,getHistorialPaciente,getTratamientoRealizado,
     getListaMateriales,getListaTratamientos,registrarAtencionCompleta,getCitasAgendadas,
     getDetalleCitaEspecifica,getUltimoHistorialPaciente,
-    getCitasPorFecha
+    getCitasPorFecha,crearPaciente
 } from "../controllers/pacientes.controller.js";
 
 const router = Router();
@@ -30,6 +30,10 @@ router.get("/citas/filtro", getCitasPorFecha);
 router.get("/cita/:id_cita/detalles", getDetalleCitaEspecifica);
 router.get("/paciente/:id_paciente/ultimo-historial", getUltimoHistorialPaciente);
 //_________________________________________APARTADO DE RECEPCIONISTA___________________________________________________________________________________
+//alta y baja
+router.post('/', crearPaciente);
+
+
 
 export default router;
 

@@ -161,3 +161,5 @@ export const obtenerPromedioPrecios = async (req, res) => {
         res.status(500).json({ error: 'Error al calcular el promedio.' });
     }
 };
+
+//_____________________________________________________________________________________________________________
