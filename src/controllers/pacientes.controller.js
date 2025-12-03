@@ -504,45 +504,4 @@ export const getUltimoHistorialPaciente = async (req, res) => {
     }
 };
 
-//_______________________________________APARTADO DEL RECEPCIONISTA_____________________________________________________________
-
-export const crearPaciente = async (req, res) => {
-    // Desestructuramos los datos que vienen del Frontend
-    const { nombresPaciente, 
-        apellidoPat, apellidoMat, 
-        telefono, email } = req.body;
-
-    // Validación básica (opcional, pero recomendada)
-    if (!nombresPaciente || !apellidoPat || !telefono || !email) {
-        return res.status(400).json({ error: 'Faltan campos obligatorios.' });
-    }
-
-    try {
-        const query = `
-            INSERT INTO Paciente (nombresPaciente, apellidoPat, apellidoMat, telefono, email)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING * `;
-        // RETURNING * nos devuelve el paciente creado con su ID y fecha generada
-
-        const values = [nombresPaciente, apellidoPat, apellidoMat, telefono, email];
-        
-        const result = await pool.query(query, values);
-
-        res.status(201).json({
-            mensaje: 'Paciente registrado exitosamente',
-            paciente: result.rows[0]
-        });
-
-    } catch (error) {
-        console.error('Error al crear paciente:', error);
-
-        // Código de error de Postgres para "Unique Violation" (ej. correo repetido)
-        if (error.code === '23505') {
-            return res.status(400).json({ 
-                error: 'El correo electrónico ya está registrado en el sistema.' 
-            });
-        }
-
-        res.status(500).json({ error: 'Error interno al registrar el paciente.' });
-    }
-};
+//_

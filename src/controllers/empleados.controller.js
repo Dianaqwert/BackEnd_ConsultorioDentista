@@ -311,3 +311,6 @@ export const buscarEmpleadoPorNombre = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 }
+
+//_______________para citas:
+// Obtener empleados filtrados por tipo (Ej: 'Dentista', 'Recepcion')
