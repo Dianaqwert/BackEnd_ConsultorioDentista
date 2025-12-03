@@ -1,55 +1,6 @@
 import { pool } from "../../conexion.js";
 
-/* 1. GENERAR CITA (CREAR)
-export const crearCita = async (req, res) => {
-    const { id_paciente, fecha, hora, descripcion, id_recepcionista } = req.body;
 
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
-
-        // A. Insertar la Cita (Estado inicial siempre 'Agendada')
-        const resCita = await client.query(`
-            INSERT INTO Cita (fecha_hora, hora, descripcion, estado_cita, id_paciente)
-            VALUES ($1, $2, $3, 'Agendada', $4)
-            RETURNING id_cita
-        `, [fecha, hora, descripcion, id_paciente]);
-
-        const idCita = resCita.rows[0].id_cita;
-
-        // B. Asignar al Recepcionista que la creó (Tabla Intermedia)
-        if (id_recepcionista) {
-            await client.query(`
-                INSERT INTO Usuario_Empleados_Cita (id_cita, id_usuario, tipo_empleado)
-                VALUES ($1, $2, 'Recepcion')
-            `, [idCita, id_recepcionista]);
-        }
-
-        await client.query('COMMIT');
-        res.status(201).json({ message: 'Cita agendada correctamente', id_cita: idCita });
-
-    } catch (error) {
-        await client.query('ROLLBACK');
-
-        // ERROR 1: EL PACIENTE YA ESTÁ OCUPADO A ESA HORA
-        // (Salta por el índice idx_paciente_un_lugar_a_la_vez)
-        if (error.code === '23505') { 
-             return res.status(400).json({ 
-                 error: "Cruce de horarios: El PACIENTE ya tiene una cita a esa misma hora." 
-             });
-        }
-        
-        // ERROR 2: EL DENTISTA YA ESTÁ OCUPADO A ESA HORA
-        // (Salta por el Trigger fn_verificar_disponibilidad_cita)
-        if (error.message.includes('El Dentista seleccionado ya tiene una cita')) {
-            return res.status(409).json({ 
-                error: "Agenda llena: El DENTISTA seleccionado ya está ocupado a esa hora." 
-            });
-        }
-
-        res.status(500).json({ error: "Error interno al agendar." });
-    }
-};*/
 export const crearCita = async (req, res) => {
     // AHORA SÍ recibimos id_dentista del body
     const { id_paciente, fecha, hora, descripcion, id_recepcionista, id_dentista } = req.body;
@@ -61,7 +12,7 @@ export const crearCita = async (req, res) => {
         // A. Insertar la Cita
         const resCita = await client.query(`
             INSERT INTO Cita (fecha_hora, hora, descripcion, estado_cita, id_paciente)
-            VALUES ($1, $2, $3, 'Agendada', $4)
+            VALUES ($1, $2, $3, 'Pendiente', $4)
             RETURNING id_cita
         `, [fecha, hora, descripcion, id_paciente]);
 
@@ -192,11 +143,14 @@ export const buscarCitasParaCobro = async (req, res) => {
             SELECT 
                 c.id_cita,
                 c.fecha_hora,
-                p.nombrespaciente || ' ' || p.apellidopat AS nombre_paciente,
+                p.nombrespaciente || ' ' || p.apellidopat || ' ' || p.apellidomat AS nombre_paciente,
                 d.monto_total,
                 d.monto_pagado,
                 d.saldo_pendiente,
-                d.estado AS estado_deuda
+                d.estado AS estado_deuda,
+
+                (SELECT fn_obtener_detalle_deudas_historicas(c.id_paciente)) AS detalle_deudas_json
+
             FROM Cita c
             JOIN Paciente p ON c.id_paciente = p.id_paciente
             JOIN Deuda d ON c.id_cita = d.id_cita
@@ -404,5 +358,73 @@ export const reprogramarCita = async (req, res) => {
         res.status(500).json({ error: error.message || "Error al reprogramar" });
     } finally {
         client.release();
+    }
+};
+
+export const getReporteIngresos = async (req, res) => {
+    const { fechaInicio, fechaFin } = req.query;
+
+    try {
+        const query = `
+            SELECT
+                COALESCE(mp.nombre_metodo, 'TOTAL GENERAL') AS metodo_pago,
+                COALESCE(t.nombre, 'SUBTOTAL PAGO') AS tratamiento,
+                SUM(p.cantidadPagada) AS ingresos_totales
+            FROM
+                Pago p
+            JOIN
+                Metodo_Pago mp ON p.metodoPagoid_metodopago = mp.id_metodo_pago
+            JOIN
+                Detalle_Costo dc ON p.idPago = dc.id_pago
+            JOIN
+                Tratamiento t ON dc.id_tipo_tratamiento = t.id_tipo_tratamiento
+            WHERE
+                p.fecha_hora::DATE BETWEEN $1 AND $2
+            GROUP BY
+                ROLLUP(mp.nombre_metodo, t.nombre)
+            ORDER BY
+                metodo_pago, tratamiento;
+        `;
+
+        const result = await pool.query(query, [fechaInicio, fechaFin]);
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Error en reporte ingresos:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// 11. REPORTE DE DEUDORES (EN EL RANGO DE FECHAS)
+export const getReporteDeudoresRango = async (req, res) => {
+    const { fechaInicio, fechaFin } = req.query;
+
+    try {
+        const query = `
+            SELECT
+                p.id_paciente,
+                p.nombrespaciente || ' ' || p.apellidopat || ' ' || COALESCE(p.apellidomat, '') AS nombre_paciente,
+                p.telefono,
+                p.email,
+                COUNT(c.id_cita) as citas_con_deuda,
+                SUM(d.saldo_pendiente) as total_deuda
+            FROM Cita c
+            JOIN Paciente p ON c.id_paciente = p.id_paciente
+            JOIN Deuda d ON c.id_cita = d.id_cita
+            WHERE 
+                c.fecha_hora BETWEEN $1 AND $2
+                AND d.saldo_pendiente > 0
+            GROUP BY 
+                p.id_paciente, p.nombrespaciente, p.apellidopat, p.apellidomat, p.telefono, p.email
+            ORDER BY 
+                total_deuda DESC;
+        `;
+
+        const result = await pool.query(query, [fechaInicio, fechaFin]);
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Error en reporte deudores:", error);
+        res.status(500).json({ error: error.message });
     }
 };
