@@ -123,7 +123,7 @@ export const getCitasFiltro = async (req, res) => {
                 c.hora, 
                 c.estado_cita, 
                 c.descripcion,
-                p.nombrespaciente || ' ' || p.apellidopat AS nombre_paciente,
+                p.nombrespaciente || ' ' || p.apellidopat || ' ' || COALESCE(p.apellidomat, '') AS nombre_paciente,
                 p.telefono
             FROM Cita c
             JOIN Paciente p ON c.id_paciente = p.id_paciente
@@ -310,7 +310,7 @@ export const getCitasFiltroLISTA = async (req, res) => {
                 c.hora, 
                 c.estado_cita, 
                 c.descripcion,
-                p.nombrespaciente || ' ' || p.apellidopat AS nombre_paciente,
+                p.nombrespaciente || ' ' || p.apellidopat || ' ' || COALESCE(p.apellidomat, '') AS nombre_paciente,
                 p.telefono
             FROM Cita c
             JOIN Paciente p ON c.id_paciente = p.id_paciente
@@ -358,7 +358,7 @@ export const reprogramarCita = async (req, res) => {
         // 1. Actualizar Datos de la Cita
         const updateCita = await client.query(`
             UPDATE Cita
-            SET fecha_hora = $1, hora = $2, estado_cita = 'Reprogramada'
+            SET fecha_hora = $1, hora = $2, estado_cita = 'Pendiente'
             WHERE id_cita = $3
             RETURNING id_cita
         `, [fecha, hora, id_cita]);
