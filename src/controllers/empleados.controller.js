@@ -312,5 +312,3 @@ export const buscarEmpleadoPorNombre = async (req, res) => {
     }
 }
 
-//_______________para citas:
-// Obtener empleados filtrados por tipo (Ej: 'Dentista', 'Recepcion')

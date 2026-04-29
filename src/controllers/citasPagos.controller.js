@@ -2,7 +2,6 @@ import { pool } from "../../conexion.js";
 
 
 export const crearCita = async (req, res) => {
-    // AHORA SÍ recibimos id_dentista del body
     const { id_paciente, fecha, hora, descripcion, id_recepcionista, id_dentista } = req.body;
 
     const client = await pool.connect();
@@ -111,7 +110,6 @@ export const cambiarEstadoCita = async (req, res) => {
     const { id_cita } = req.params;
     const { nuevo_estado } = req.body;
 
-    // Validación simple de estados permitidos según tu check constraint
     const estadosPermitidos = ['Agendada','Confirmada','Cancelada','Pendiente','Reprogramada','Atendida','No asistio'];
     if (!estadosPermitidos.includes(nuevo_estado)) {
         return res.status(400).json({ error: "Estado no válido" });
@@ -184,7 +182,7 @@ export const buscarCitasParaCobro = async (req, res) => {
     }
 };
 
-// 5. PROCESAR EL COBRO (Insertar Pago y Actualizar Deuda)
+/* 5. PROCESAR EL COBRO (Insertar Pago y Actualizar Deuda)*/
 export const procesarCobro = async (req, res) => {
     const { id_cita, monto_a_pagar, id_metodo_pago } = req.body;
 
@@ -192,14 +190,25 @@ export const procesarCobro = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // A. Registrar el PAGO
-        await client.query(`
+        // A. Insertar el pago y obtener el ID generado (idpago)
+        // Usamos 'metodoPagoid_metodopago' que es el nombre real en tu tabla Pago
+        const resPago = await client.query(`
             INSERT INTO Pago (cantidadPagada, id_cita, metodoPagoid_metodopago)
             VALUES ($1, $2, $3)
+            RETURNING idPago
         `, [monto_a_pagar, id_cita, id_metodo_pago]);
 
-        // B. Actualizar la DEUDA (Sumar lo pagado)
-        // OJO: Tu trigger 'tr_actualizar_deuda' se encargará de calcular saldo_pendiente y el estado.
+        const nuevoIdPago = resPago.rows[0].idpago;
+
+        // B. Vincular el pago a Detalle_Costo (Quita los NULL)
+        await client.query(`
+            UPDATE Detalle_Costo 
+            SET id_pago = $1 
+            WHERE id_cita = $2 AND id_pago IS NULL
+        `, [nuevoIdPago, id_cita]);
+
+        // C. Actualizar la Deuda
+        // Tu trigger 'tr_actualizar_deuda' se encargará de recalcular el saldo solo
         await client.query(`
             UPDATE Deuda 
             SET monto_pagado = monto_pagado + $1
@@ -211,10 +220,16 @@ export const procesarCobro = async (req, res) => {
 
     } catch (error) {
         await client.query('ROLLBACK');
-        // Capturamos el error del trigger (ej: si paga más de lo que debe)
-        console.error(error);
-        res.status(400).json({ error: error.message });
+        console.error("Error en cobro:", error.message);
+
+        // Capturamos el mensaje de tu trigger 'tr_validar_pago_limite'
+        const mensajeError = error.message.includes('Cobro inválido') 
+            ? error.message 
+            : "Error al procesar el cobro";
+        
+        res.status(400).json({ error: mensajeError });
     } finally {
+        // Siempre liberamos el cliente al finalizar
         client.release();
     }
 };
@@ -275,7 +290,7 @@ export const getCitasFiltroLISTA = async (req, res) => {
         const values = [];
         let paramIndex = 1;
 
-        // 🟦 FORMATEO DE FECHA (para manejar fechas ISO del datepicker)
+        // FORMATEO DE FECHA (para manejar fechas ISO del datepicker)
         if (fecha) {
             const fechaLimpia = fecha.split("T")[0];  // ← SOLUCIÓN
             query += ` AND c.fecha_hora = $${paramIndex}`;
@@ -283,7 +298,7 @@ export const getCitasFiltroLISTA = async (req, res) => {
             paramIndex++;
         }
 
-        // 🟦 FILTRO OPCIONAL POR ESTADO
+        // FILTRO OPCIONAL POR ESTADO
         if (estado && estado !== 'Todos') {
             query += ` AND c.estado_cita = $${paramIndex}`;
             values.push(estado);
@@ -361,21 +376,23 @@ export const reprogramarCita = async (req, res) => {
     }
 };
 
+/*
 export const getReporteIngresos = async (req, res) => {
     const { fechaInicio, fechaFin } = req.query;
 
     try {
+        // Actualiza esta consulta en tu getReporteIngresos
         const query = `
             SELECT
                 COALESCE(mp.nombre_metodo, 'TOTAL GENERAL') AS metodo_pago,
-                COALESCE(t.nombre, 'SUBTOTAL PAGO') AS tratamiento,
-                SUM(p.cantidadPagada) AS ingresos_totales
+                COALESCE(t.nombre, 'SUBTOTAL ' || mp.nombre_metodo) AS tratamiento,
+                SUM(dc.subtotal) AS ingresos_totales
             FROM
-                Pago p
+                Detalle_Costo dc
+            JOIN
+                Pago p ON dc.id_pago = p.idPago
             JOIN
                 Metodo_Pago mp ON p.metodoPagoid_metodopago = mp.id_metodo_pago
-            JOIN
-                Detalle_Costo dc ON p.idPago = dc.id_pago
             JOIN
                 Tratamiento t ON dc.id_tipo_tratamiento = t.id_tipo_tratamiento
             WHERE
@@ -383,7 +400,53 @@ export const getReporteIngresos = async (req, res) => {
             GROUP BY
                 ROLLUP(mp.nombre_metodo, t.nombre)
             ORDER BY
-                metodo_pago, tratamiento;
+                mp.nombre_metodo NULLS LAST, t.nombre NULLS LAST;
+        `;
+
+        const result = await pool.query(query, [fechaInicio, fechaFin]);
+        res.json(result.rows);
+
+    } catch (error) {
+        console.error("Error en reporte ingresos:", error);
+        res.status(500).json({ error: error.message });
+    }
+};*/
+export const getReporteIngresos = async (req, res) => {
+    const { fechaInicio, fechaFin } = req.query;
+
+    try {
+        const query = `
+            SELECT
+                -- Nivel 1: Si el metodo es null, es el TOTAL GENERAL
+                CASE 
+                    WHEN mp.nombre_metodo IS NULL THEN 'TOTAL GENERAL'
+                    ELSE mp.nombre_metodo 
+                END AS metodo_pago,
+                
+                -- Nivel 2: Si el tratamiento es null, es el SUBTOTAL DEL METODO
+                CASE 
+                    WHEN mp.nombre_metodo IS NOT NULL AND t.nombre IS NULL THEN 'SUBTOTAL PAGO'
+                    WHEN mp.nombre_metodo IS NULL THEN 'SUBTOTAL PAGO' -- Para que coincida en el total general
+                    ELSE t.nombre 
+                END AS tratamiento,
+                
+                SUM(dc.subtotal) AS ingresos_totales
+            FROM
+                Detalle_Costo dc
+            JOIN
+                Pago p ON dc.id_pago = p.idPago
+            JOIN
+                Metodo_Pago mp ON p.metodoPagoid_metodopago = mp.id_metodo_pago
+            JOIN
+                Tratamiento t ON dc.id_tipo_tratamiento = t.id_tipo_tratamiento
+            WHERE
+                p.fecha_hora::DATE BETWEEN $1 AND $2
+            GROUP BY
+                ROLLUP(mp.nombre_metodo, t.nombre)
+            ORDER BY
+                -- Ordenamos para que Efectivo/Transferencia salgan primero y Total General al final
+                mp.nombre_metodo NULLS LAST, 
+                t.nombre NULLS LAST;
         `;
 
         const result = await pool.query(query, [fechaInicio, fechaFin]);

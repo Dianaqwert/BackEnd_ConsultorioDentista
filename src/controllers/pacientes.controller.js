@@ -296,26 +296,78 @@ export const registrarAtencionCompleta = async (req, res) => {
             }
         }
 
-        // 4. TRATAMIENTOS: SIEMPRE AGREGAR (Append)
-        // Esto permite que el dentista agregue "2 resinas" primero, guarde, y luego agregue "1 limpieza" después.
+        // 4. TRATAMIENTOS (Procedimientos médicos)
         if (tratamientos && tratamientos.length > 0) {
             for (const trat of tratamientos) {
+                // Buscamos el costo en la tabla 'Tratamiento'
                 const resCosto = await client.query('SELECT costo FROM Tratamiento WHERE id_tipo_tratamiento = $1', [trat.id_tipo_tratamiento]);
-                const costoUnitario = resCosto.rows[0].costo;
-                const subTotal = costoUnitario * trat.cantidad;
+                
+                if (resCosto.rows.length > 0) {
+                    const costoUnitario = resCosto.rows[0].costo;
+                    const subTotal = costoUnitario * trat.cantidad;
 
+                    await client.query(
+                        `INSERT INTO Detalle_Costo (cantidad, subTotal, id_cita, id_tipo_tratamiento, id_tipo_material)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [trat.cantidad, subTotal, id_cita, trat.id_tipo_tratamiento, trat.id_tipo_material]
+                    );
+                }
+            }
+        }
+
+        // 5. INSUMOS EXTRA (Materiales sueltos que no son tratamientos)
+        const { insumos_extra } = req.body; // Extraemos el nuevo array
+        // B. Guardar Insumos Sueltos (MODIFICADO: COSTO $0)
+        if (insumos_extra && insumos_extra.length > 0) {
+            for (const i of insumos_extra) {
+                // Ya no necesitamos buscar el costoUnitario si no vamos a cobrar
                 await client.query(
-                    `INSERT INTO Detalle_Costo 
-                    (cantidad, subTotal, id_cita, id_tipo_tratamiento, id_tipo_material, id_pago)
-                    VALUES ($1, $2, $3, $4, $5, NULL)`,
-                    [trat.cantidad, subTotal, id_cita, trat.id_tipo_tratamiento, trat.id_tipo_material]
+                    `INSERT INTO Detalle_Costo (cantidad, subTotal, id_cita, id_tipo_tratamiento, id_tipo_material)
+                    VALUES ($1, 0, $2, NULL, $3)`, // Insertamos subTotal como 0
+                    [i.cantidad, id_cita, i.id_tipo_material]
                 );
             }
         }
 
-        // 5. DERIVACIONES Y ESTUDIOS (Igual, siempre agregan nuevos si se mandan)
-        // ... (Tu código actual de derivaciones y estudios está bien, simplemente agregará más filas si el usuario las pone) ...
-        // (Copia y pega la parte de derivaciones y estudios que ya tenías)
+        // 5. DERIVACIONES
+        if (derivaciones && derivaciones.length > 0) {
+            for (const der of derivaciones) {
+                await client.query(
+                    `INSERT INTO Derivacion 
+                    (nombreDentista, apellidoPatDentista, apellidoMatDentista, especialidadDentista, motivo, fecha, id_paciente, id_cita)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, 
+                    [
+                        der.nombreDentista,
+                        der.apellidoPatDentista,
+                        der.apellidoMatDentista,
+                        der.especialidadDentista,
+                        der.motivo,
+                        der.fecha, // <-- Aquí recibimos el "2026-01-22" que mandas desde el .ts
+                        id_paciente,
+                        id_cita
+                    ]
+                );
+            }
+        }
+
+        // 6. ESTUDIOS (Aquí era donde fallaba)
+        if (estudios && estudios.length > 0) {
+            for (const est of estudios) {
+                await client.query(
+                    `INSERT INTO Estudio 
+                    (nombre, descripcion, resultados, fecha_hora, id_paciente, id_cita) -- Se cambió 'fecha' por 'fecha_hora'
+                    VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [
+                        est.nombre,
+                        est.descripcion,
+                        est.resultados,
+                        est.fecha_hora, // Asegúrate de que este nombre coincida con lo que manda el Frontend
+                        id_paciente,
+                        id_cita
+                    ]
+                );
+            }
+        }
 
         await client.query('COMMIT');
         res.json({ message: 'Atención actualizada correctamente.' });
@@ -350,7 +402,8 @@ export const getListaMateriales = async (req, res) => {
             SELECT 
                 id_tipo_material, 
                 nombre AS nombre_material, -- Alias para el frontend
-                stock 
+                stock,
+                costounitario
             FROM Material_Tratamiento 
             WHERE stock > 0 
             ORDER BY nombre
@@ -504,4 +557,3 @@ export const getUltimoHistorialPaciente = async (req, res) => {
     }
 };
 
-//_

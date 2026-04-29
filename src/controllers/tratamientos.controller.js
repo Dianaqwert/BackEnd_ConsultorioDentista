@@ -102,7 +102,7 @@ export const obtenerPacientesTratamientosInactivos = async (req, res) => {
             JOIN Paciente p ON c.id_paciente = p.id_paciente
             JOIN Deuda d ON c.id_cita = d.id_cita  -- JOIN estricto, debe tener registro de deuda
             WHERE t.activo = FALSE
-              AND d.saldo_pendiente > 0            -- <--- EL FILTRO CLAVE: Solo si deben dinero
+              AND d.saldo_pendiente > 0            
             ORDER BY c.fecha_hora DESC;
         `;
         const result = await pool.query(query);

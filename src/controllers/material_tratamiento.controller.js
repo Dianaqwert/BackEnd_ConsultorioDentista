@@ -3,7 +3,7 @@ import { pool } from '../../conexion.js';
 export const obtenerMateriales = async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM Material_Tratamiento ORDER BY nombre');
-        const materiales = result[0] || result.rows;
+        const materiales = result.rows; // Usar result.rows directamente
         res.status(200).json(materiales);
     } catch (error) {
         console.error("Error al obtener materiales:", error);
@@ -13,8 +13,10 @@ export const obtenerMateriales = async (req, res) => {
 
 export const crearMaterial = async (req, res) => {
     try {
-        const { nombre, costounitario, stock, cantidad, id_tipo_material } = req.body;
+        // ⚠️ OJO: Quitamos id_empleado_creador de la desestructuración
+        const { nombre, costounitario, stock, cantidad, id_tipo_material } = req.body; 
 
+        // ⚠️ OJO: Quitamos el sexto parámetro de la llamada SQL
         const result = await pool.query('SELECT fn_crear_material($1, $2, $3, $4, $5)',
             [nombre, costounitario, stock, cantidad, id_tipo_material]
         );
@@ -57,14 +59,14 @@ export const buscarMateriales = async (req, res) => {
             return obtenerMateriales(req, res);
         }
 
-        // Usando SELECT * en la función interna de búsqueda
         const result = await pool.query('SELECT * FROM fn_buscar_material($1)', [term]);
-        const materiales = result[0] || result.rows;
+        const materiales = result.rows; // Usar result.rows directamente
 
         res.status(200).json(materiales);
     } catch (error) {
         console.error("Error al buscar materiales:", error);
-        res.status(500).json({ message: "Error interno del servidor durante la búsqueda" });
+        // El error 500 ahora es lanzado por la BD debido a unaccent, por eso hay que instalarlo.
+        res.status(500).json({ message: "Error interno del servidor durante la búsqueda: Verifique si la extensión 'unaccent' está instalada." });
     }
 };
 
@@ -73,6 +75,7 @@ export const actualizarMaterial = async (req, res) => {
         const { id } = req.params;
         const { nombre, costounitario, stock, cantidad, id_tipo_material } = req.body;
 
+        // ⚠️ OJO: Quitamos el séptimo parámetro de la llamada SQL
         const result = await pool.query('SELECT fn_actualizar_material($1, $2, $3, $4, $5, $6)',
             [id, nombre, costounitario, stock, cantidad, id_tipo_material]
         );
